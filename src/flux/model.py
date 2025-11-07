@@ -90,28 +90,27 @@ class Flux(nn.Module):
         timesteps: Tensor | None = None,
         y: Tensor | None = None,
         guidance: Tensor | None = None,
+        unconditional: bool = False,
     ) -> Tensor:
         if img.ndim != 3:
             raise ValueError("Input img tensor must have 3 dimensions.")
         
         # Handle unconditional generation
-        if txt is None or y is None:
+        if unconditional or txt is None or y is None:
             # Create null conditioning
             batch_size = img.shape[0]
             device = img.device
             dtype = img.dtype
             
-            if txt is None:
-                # Create empty text embeddings with sequence length 1
-                txt = torch.zeros(batch_size, 1, self.params.context_in_dim, device=device, dtype=dtype)
-            if txt_ids is None:
-                txt_ids = torch.zeros(batch_size, txt.shape[1], 3, device=device, dtype=dtype)
-            if y is None:
-                # Create null vector embeddings
-                y = torch.zeros(batch_size, self.params.vec_in_dim, device=device, dtype=dtype)
-            if timesteps is None:
-                # Default timestep if not provided
-                timesteps = torch.ones(batch_size, device=device, dtype=dtype)
+            # Create empty text embeddings with sequence length 1
+            txt = torch.zeros(batch_size, 1, self.params.context_in_dim, device=device, dtype=dtype)
+            txt_ids = torch.zeros(batch_size, 1, 3, device=device, dtype=dtype)
+            # Create null vector embeddings
+            y = torch.zeros(batch_size, self.params.vec_in_dim, device=device, dtype=dtype)
+            
+        if timesteps is None:
+            # Default timestep if not provided
+            timesteps = torch.ones(img.shape[0], device=img.device, dtype=img.dtype)
         
         if txt.ndim != 3:
             raise ValueError("Input txt tensor must have 3 dimensions.")

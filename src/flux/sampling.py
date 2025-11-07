@@ -279,6 +279,8 @@ def denoise(
     # extra img tokens (sequence-wise)
     img_cond_seq: Tensor | None = None,
     img_cond_seq_ids: Tensor | None = None,
+    # unconditional generation
+    unconditional: bool = False,
 ):
     # this is ignored for schnell
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
@@ -302,6 +304,7 @@ def denoise(
             y=vec,
             timesteps=t_vec,
             guidance=guidance_vec,
+            unconditional=unconditional,
         )
         if img_input_ids is not None:
             pred = pred[:, : img.shape[1]]
