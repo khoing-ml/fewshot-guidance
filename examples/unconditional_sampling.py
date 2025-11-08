@@ -3,19 +3,26 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+import os
 import torch
 import numpy as np
+from dotenv import load_dotenv
 
 from flux.sampling import get_noise, prepare_unconditional, get_schedule, denoise, unpack
+from flux.util import load_flow_model
+
+
+load_dotenv(".env")
 
 
 def main():
-    device = torch.device("cpu")
+    device = torch.device("cuda")
     dtype = torch.float32
     height, width = 64, 64
     seed = 42
 
-    # Create initial noise
+    # Load the FLUX model
+    model = load_flow_model("flux-schnell", device=device)
     noise = get_noise(num_samples=1, height=height, width=width, device=device, dtype=dtype, seed=seed)
 
     # Prepare unconditional inputs
@@ -29,13 +36,14 @@ def main():
     # Simple timestep schedule
     timesteps = get_schedule(num_steps=10, image_seq_len=img.shape[1], shift=False)
 
-    # Dummy model compatible with denoise() call signature
-    class DummyFlux(torch.nn.Module):
-        def forward(self, img, img_ids, txt, txt_ids, y, timesteps, guidance, unconditional=False):
-            # return a small random correction prediction
-            return torch.randn_like(img) * 0.05
 
-    model = DummyFlux()
+    # move inputs to the same device/dtype as model parameters
+    model_dtype = next(model.parameters()).dtype
+    img = img.to(device=device, dtype=model_dtype)
+    img_ids = img_ids.to(device=device, dtype=model_dtype)
+    txt = txt.to(device=device, dtype=model_dtype)
+    txt_ids = txt_ids.to(device=device, dtype=model_dtype)
+    vec = vec.to(device=device, dtype=model_dtype)
 
     # Run denoising loop unconditionally
     out = denoise(
