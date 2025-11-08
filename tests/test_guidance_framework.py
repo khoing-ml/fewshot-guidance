@@ -271,10 +271,9 @@ def test_integration_with_sampling():
             txt_ids=txt_ids,
             vec=vec,
             timesteps=timesteps,
-            guidance=3.5,
-            guidance_model=guidance_model,
-            guidance_scale=0.5,
-            guidance_requires_grad=False,
+            guidance=1.0,
+            unconditional=True
+            
         )
         
         assert result.shape == img.shape, f"Output shape mismatch: {result.shape} vs {img.shape}"
