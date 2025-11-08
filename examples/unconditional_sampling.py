@@ -17,6 +17,7 @@ load_dotenv(".env")
 
 def main():
     device = torch.device("cuda")
+    print("Using device:", device)
     dtype = torch.float32
     height, width = 64, 64
     seed = 42
