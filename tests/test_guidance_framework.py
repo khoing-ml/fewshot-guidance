@@ -241,7 +241,7 @@ def test_integration_with_sampling():
     print("Testing integration with sampling...")
     
     try:
-        from flux.sampling import denoise, apply_guidance_model
+        from flux.sampling import denoise
         
         # Create dummy model
         class DummyFlux(nn.Module):
