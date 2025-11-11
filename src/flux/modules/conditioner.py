@@ -1,6 +1,5 @@
 from torch import Tensor, nn
-import torch
-from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5Tokenizer
+from transformers import CLIPModel, CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5Tokenizer
 
 
 class HFEmbedder(nn.Module):
@@ -12,7 +11,13 @@ class HFEmbedder(nn.Module):
 
         if self.is_clip:
             self.tokenizer: CLIPTokenizer = CLIPTokenizer.from_pretrained(version, max_length=max_length)
-            self.hf_module: CLIPTextModel = CLIPTextModel.from_pretrained(version, **hf_kwargs)
+            # Some CLIP checkpoints use a full CLIP config (CLIPConfig) that wraps
+            # text and vision configs. Loading the full CLIPModel and extracting
+            # its text_model avoids passing a CLIPConfig into CLIPTextModel
+            # (which expects CLIPTextConfig) and prevents the AttributeError for
+            # missing `hidden_size` on CLIPConfig.
+            clip_full: CLIPModel = CLIPModel.from_pretrained(version, **hf_kwargs)
+            self.hf_module: CLIPTextModel = clip_full.text_model
         else:
             self.tokenizer: T5Tokenizer = T5Tokenizer.from_pretrained(version, max_length=max_length)
             self.hf_module: T5EncoderModel = T5EncoderModel.from_pretrained(version, **hf_kwargs)

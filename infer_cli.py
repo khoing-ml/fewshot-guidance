@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Simple CLI to run a single inference using the Flux model (no Gradio).
-
-This script mirrors the core sampling flow used in the demo but exposes a
-small command-line interface to generate and save one image.
-"""
 import os
 import time
 import uuid
