@@ -1,4 +1,5 @@
 from torch import Tensor, nn
+import torch
 from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5Tokenizer
 
 
@@ -28,9 +29,15 @@ class HFEmbedder(nn.Module):
             padding="max_length",
             return_tensors="pt",
         )
+        device = getattr(self.hf_module, "device", None)
+        if device is None:
+            try:
+                device = next(self.hf_module.parameters()).device
+            except StopIteration:
+                device = torch.device("cpu")
 
         outputs = self.hf_module(
-            input_ids=batch_encoding["input_ids"].to(self.hf_module.device),
+            input_ids=batch_encoding["input_ids"].to(device),
             attention_mask=None,
             output_hidden_states=False,
         )
