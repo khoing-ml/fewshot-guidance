@@ -9,7 +9,7 @@ import numpy as np
 from dotenv import load_dotenv
 
 from flux.sampling import get_noise, prepare, get_schedule, denoise, unpack
-from flux.util import load_flow_model
+from flux.util import load_flow_model, load_t5, load_clip
 
 
 load_dotenv(".env")
@@ -25,9 +25,11 @@ def main():
     # Load the FLUX model
     model = load_flow_model("flux-dev", device=device)
     noise = get_noise(num_samples=1, height=height, width=width, device=device, dtype=dtype, seed=seed)
-
+    prompt = ""
+    t5_model = load_t5(device=device, dtype=dtype)
+    clip_model = load_clip(device=device, dtype=dtype)
     # Prepare unconditional inputs
-    inp = prepare(noise)
+    inp = prepare(noise, prompt, t5_model, clip_model, device=device, dtype=dtype)
     img = inp["img"]
     img_ids = inp["img_ids"]
     txt = inp["txt"]
