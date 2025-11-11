@@ -31,23 +31,9 @@ def get_noise(
         generator=torch.Generator(device="cpu").manual_seed(seed),
     ).to(device)
 
-
-def prepare_unconditional(img: Tensor) -> dict[str, Tensor]:
-    """
-    Prepare inputs for unconditional generation (no text prompt).
-    
-    Args:
-        img: Noise tensor with shape (batch, channels, height, width)
-    
-    Returns:
-        Dictionary with img, img_ids, txt (null), txt_ids (null), and vec (null)
-    """
-    return prepare(t5=None, clip=None, img=img, prompt=None)
-
-
-def prepare(t5: HFEmbedder | None, clip: HFEmbedder | None, img: Tensor, prompt: str | list[str] | None = None) -> dict[str, Tensor]:
+def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
     bs, c, h, w = img.shape
-    if bs == 1 and prompt is not None and not isinstance(prompt, str):
+    if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
 
     img = rearrange(img, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
@@ -59,14 +45,8 @@ def prepare(t5: HFEmbedder | None, clip: HFEmbedder | None, img: Tensor, prompt:
     img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // 2)[None, :]
     img_ids = repeat(img_ids, "h w c -> b (h w) c", b=bs)
 
-    # Handle unconditional generation
-    
     if isinstance(prompt, str):
         prompt = [prompt]
-    
-    if t5 is None or clip is None:
-        raise ValueError("T5 and CLIP embedders must be provided for conditional generation")
-    
     txt = t5(prompt)
     if txt.shape[0] == 1 and bs > 1:
         txt = repeat(txt, "1 ... -> bs ...", bs=bs)

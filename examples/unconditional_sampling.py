@@ -56,7 +56,6 @@ def main():
         vec=vec,
         timesteps=timesteps,
         guidance=1.0, # ignored for unconditional
-        unconditional=True, 
     )
 
     # Unpack to spatial latent shape
