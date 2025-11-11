@@ -88,27 +88,12 @@ class Flux(nn.Module):
         txt: Tensor | None = None,
         txt_ids: Tensor | None = None,
         timesteps: Tensor | None = None,
-        y: Tensor | None = None,
+        y: Tensor | None = None, # Vector conditioning
         guidance: Tensor | None = None,
-        unconditional: bool = False,
-        guidance_model: nn.Module | None = None,
     ) -> Tensor:
         if img.ndim != 3:
             raise ValueError("Input img tensor must have 3 dimensions.")
-        
         # Handle unconditional generation
-        if unconditional or txt is None or y is None:
-            # Create null conditioning
-            batch_size = img.shape[0]
-            device = img.device
-            dtype = img.dtype
-            
-            # Create empty text embeddings with sequence length 1
-            txt = torch.zeros(batch_size, 1, self.params.context_in_dim, device=device, dtype=dtype)
-            txt_ids = torch.zeros(batch_size, 1, 3, device=device, dtype=dtype)
-            # Create null vector embeddings
-            y = torch.zeros(batch_size, self.params.vec_in_dim, device=device, dtype=dtype)
-            
         if timesteps is None:
             # Default timestep if not provided
             timesteps = torch.ones(img.shape[0], device=img.device, dtype=img.dtype)
@@ -124,24 +109,12 @@ class Flux(nn.Module):
             if guidance is None:
                 raise ValueError("Didn't get guidance strength for guidance distilled model.")
             vec = vec + self.guidance_in(timestep_embedding(guidance, 256))
-        ## guidance model here (expect training here)
-        if guidance_model is not None and guidance is not False:
-            guidance_vec = guidance_model(
-                img=img,
-                img_ids=img_ids,
-                txt=txt,
-                txt_ids=txt_ids,
-                y=y,
-                timesteps=timesteps,
-            )
-            vec = vec + guidance_vec
-    
         vec = vec + self.vector_in(y)
         txt = self.txt_in(txt)
 
         ids = torch.cat((txt_ids, img_ids), dim=1)
         pe = self.pe_embedder(ids)
-
+        ### here is where it embeded text and image together
         for block in self.double_blocks:
             img, txt = block(img=img, txt=txt, vec=vec, pe=pe)
 

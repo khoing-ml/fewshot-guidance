@@ -23,7 +23,7 @@ def main():
     seed = 42
 
     # Load the FLUX model
-    model = load_flow_model("flux-schnell", device=device)
+    model = load_flow_model("flux-dev", device=device)
     noise = get_noise(num_samples=1, height=height, width=width, device=device, dtype=dtype, seed=seed)
 
     # Prepare unconditional inputs
@@ -55,8 +55,8 @@ def main():
         txt_ids=txt_ids,
         vec=vec,
         timesteps=timesteps,
-        guidance=1.0,
-        unconditional=True,
+        guidance=1.0, # ignored for unconditional
+        unconditional=True, 
     )
 
     # Unpack to spatial latent shape

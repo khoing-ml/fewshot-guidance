@@ -60,26 +60,21 @@ def prepare(t5: HFEmbedder | None, clip: HFEmbedder | None, img: Tensor, prompt:
     img_ids = repeat(img_ids, "h w c -> b (h w) c", b=bs)
 
     # Handle unconditional generation
-    if prompt is None or prompt == "" or (isinstance(prompt, list) and all(p == "" for p in prompt)):
-        # Create null text embeddings
-        txt = torch.zeros(bs, 1, 4096, device=img.device, dtype=img.dtype)  # T5 embedding dim
-        txt_ids = torch.zeros(bs, 1, 3, device=img.device, dtype=img.dtype)
-        vec = torch.zeros(bs, 768, device=img.device, dtype=img.dtype)  # CLIP embedding dim
-    else:
-        if isinstance(prompt, str):
-            prompt = [prompt]
-        
-        if t5 is None or clip is None:
-            raise ValueError("T5 and CLIP embedders must be provided for conditional generation")
-        
-        txt = t5(prompt)
-        if txt.shape[0] == 1 and bs > 1:
-            txt = repeat(txt, "1 ... -> bs ...", bs=bs)
-        txt_ids = torch.zeros(bs, txt.shape[1], 3)
+    
+    if isinstance(prompt, str):
+        prompt = [prompt]
+    
+    if t5 is None or clip is None:
+        raise ValueError("T5 and CLIP embedders must be provided for conditional generation")
+    
+    txt = t5(prompt)
+    if txt.shape[0] == 1 and bs > 1:
+        txt = repeat(txt, "1 ... -> bs ...", bs=bs)
+    txt_ids = torch.zeros(bs, txt.shape[1], 3)
 
-        vec = clip(prompt)
-        if vec.shape[0] == 1 and bs > 1:
-            vec = repeat(vec, "1 ... -> bs ...", bs=bs)
+    vec = clip(prompt)
+    if vec.shape[0] == 1 and bs > 1:
+        vec = repeat(vec, "1 ... -> bs ...", bs=bs)
 
     return {
         "img": img,
@@ -229,8 +224,6 @@ def prepare(t5: HFEmbedder | None, clip: HFEmbedder | None, img: Tensor, prompt:
 #         "vec": vec.to(img.device),
 #     }
 
-
-
 def time_shift(mu: float, sigma: float, t: Tensor):
     return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
@@ -241,7 +234,6 @@ def get_lin_function(
     m = (y2 - y1) / (x2 - x1)
     b = y1 - m * x1
     return lambda x: m * x + b
-
 
 def get_schedule(
     num_steps: int,
@@ -279,9 +271,8 @@ def denoise(
     img_cond_seq: Tensor | None = None,
     img_cond_seq_ids: Tensor | None = None,
     # unconditional generation
-    unconditional: bool = False,
 ):
-    # this is ignored for schnell
+    # this is ignored for schnel
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
     for t_curr, t_prev in zip(timesteps[:-1], timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
@@ -303,13 +294,10 @@ def denoise(
             y=vec,
             timesteps=t_vec,
             guidance=guidance_vec,
-            unconditional=unconditional,
         )
         if img_input_ids is not None:
             pred = pred[:, : img.shape[1]]
-
         img = img + (t_prev - t_curr) * pred
-
     return img
 
 
