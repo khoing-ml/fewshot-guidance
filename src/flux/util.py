@@ -8,6 +8,7 @@ import requests
 import torch
 from einops import rearrange
 from huggingface_hub import hf_hub_download, login
+from imwatermark import WatermarkEncoder
 from PIL import ExifTags, Image
 from safetensors.torch import load_file as load_sft
 
@@ -17,6 +18,7 @@ from flux.modules.conditioner import HFEmbedder
 
 CHECKPOINTS_DIR = Path("checkpoints")
 CHECKPOINTS_DIR.mkdir(exist_ok=True)
+BFL_API_KEY = os.getenv("BFL_API_KEY")
 
 os.environ.setdefault("TRT_ENGINE_DIR", str(CHECKPOINTS_DIR / "trt_engines"))
 (CHECKPOINTS_DIR / "trt_engines").mkdir(exist_ok=True)
@@ -201,6 +203,43 @@ def check_onnx_access_for_trt(model_name: str, trt_transformer_precision: str = 
     return download_onnx_models_for_trt(model_name, trt_transformer_precision)
 
 
+def track_usage_via_api(name: str, n=1) -> None:
+    """
+    Track usage of licensed models via the BFL API for commercial licensing compliance.
+
+    For more information on licensing BFL's models for commercial use and usage reporting,
+    see the README.md or visit: https://dashboard.bfl.ai/licensing/subscriptions?showInstructions=true
+    """
+    assert BFL_API_KEY is not None, "BFL_API_KEY is not set"
+
+    model_slug_map = {
+        "flux-dev": "flux-1-dev",
+        "flux-dev-kontext": "flux-1-kontext-dev",
+        "flux-dev-fill": "flux-tools",
+        "flux-dev-depth": "flux-tools",
+        "flux-dev-canny": "flux-tools",
+        "flux-dev-canny-lora": "flux-tools",
+        "flux-dev-depth-lora": "flux-tools",
+        "flux-dev-redux": "flux-tools",
+        "flux-dev-krea": "flux-1-krea-dev",
+    }
+
+    if name not in model_slug_map:
+        print(f"Skipping tracking usage for {name}, as it cannot be tracked. Please check the model name.")
+        return
+
+    model_slug = model_slug_map[name]
+    url = f"https://api.bfl.ai/v1/licenses/models/{model_slug}/usage"
+    headers = {"x-key": BFL_API_KEY, "Content-Type": "application/json"}
+    payload = {"number_of_generations": n}
+
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"Failed to track usage: {response.status_code} {response.text}")
+    else:
+        print(f"Successfully tracked usage for {name} with {n} generations")
+
+
 def save_image(
     nsfw_classifier,
     name: str,
@@ -210,11 +249,13 @@ def save_image(
     add_sampling_metadata: bool,
     prompt: str,
     nsfw_threshold: float = 0.85,
+    track_usage: bool = False,
 ) -> int:
     fn = output_name.format(idx=idx)
     print(f"Saving {fn}")
     # bring into PIL format and save
     x = x.clamp(-1, 1)
+    x = embed_watermark(x.float())
     x = rearrange(x[0], "c h w -> h w c")
 
     img = Image.fromarray((127.5 * (x + 1.0)).cpu().byte().numpy())
@@ -234,6 +275,8 @@ def save_image(
         if add_sampling_metadata:
             exif_data[ExifTags.Base.ImageDescription] = prompt
         img.save(fn, exif=exif_data, quality=95, subsampling=0)
+        if track_usage:
+            track_usage_via_api(name, 1)
         idx += 1
     else:
         print("Your generated image may contain NSFW content.")
@@ -441,8 +484,70 @@ configs = {
             shift_factor=0.1159,
         ),
     ),
-    
-   
+    "flux-dev-depth-lora": ModelSpec(
+        repo_id="black-forest-labs/FLUX.1-dev",
+        repo_flow="flux1-dev.safetensors",
+        repo_ae="ae.safetensors",
+        lora_repo_id="black-forest-labs/FLUX.1-Depth-dev-lora",
+        lora_filename="flux1-depth-dev-lora.safetensors",
+        params=FluxParams(
+            in_channels=128,
+            out_channels=64,
+            vec_in_dim=768,
+            context_in_dim=4096,
+            hidden_size=3072,
+            mlp_ratio=4.0,
+            num_heads=24,
+            depth=19,
+            depth_single_blocks=38,
+            axes_dim=[16, 56, 56],
+            theta=10_000,
+            qkv_bias=True,
+            guidance_embed=True,
+        ),
+        ae_params=AutoEncoderParams(
+            resolution=256,
+            in_channels=3,
+            ch=128,
+            out_ch=3,
+            ch_mult=[1, 2, 4, 4],
+            num_res_blocks=2,
+            z_channels=16,
+            scale_factor=0.3611,
+            shift_factor=0.1159,
+        ),
+    ),
+    "flux-dev-redux": ModelSpec(
+        repo_id="black-forest-labs/FLUX.1-Redux-dev",
+        repo_flow="flux1-redux-dev.safetensors",
+        repo_ae="ae.safetensors",
+        params=FluxParams(
+            in_channels=64,
+            out_channels=64,
+            vec_in_dim=768,
+            context_in_dim=4096,
+            hidden_size=3072,
+            mlp_ratio=4.0,
+            num_heads=24,
+            depth=19,
+            depth_single_blocks=38,
+            axes_dim=[16, 56, 56],
+            theta=10_000,
+            qkv_bias=True,
+            guidance_embed=True,
+        ),
+        ae_params=AutoEncoderParams(
+            resolution=256,
+            in_channels=3,
+            ch=128,
+            out_ch=3,
+            ch_mult=[1, 2, 4, 4],
+            num_res_blocks=2,
+            z_channels=16,
+            scale_factor=0.3611,
+            shift_factor=0.1159,
+        ),
+    ),
     "flux-dev-fill": ModelSpec(
         repo_id="black-forest-labs/FLUX.1-Fill-dev",
         repo_flow="flux1-fill-dev.safetensors",
@@ -474,7 +579,37 @@ configs = {
             shift_factor=0.1159,
         ),
     ),
-   
+    "flux-dev-kontext": ModelSpec(
+        repo_id="black-forest-labs/FLUX.1-Kontext-dev",
+        repo_flow="flux1-kontext-dev.safetensors",
+        repo_ae="ae.safetensors",
+        params=FluxParams(
+            in_channels=64,
+            out_channels=64,
+            vec_in_dim=768,
+            context_in_dim=4096,
+            hidden_size=3072,
+            mlp_ratio=4.0,
+            num_heads=24,
+            depth=19,
+            depth_single_blocks=38,
+            axes_dim=[16, 56, 56],
+            theta=10_000,
+            qkv_bias=True,
+            guidance_embed=True,
+        ),
+        ae_params=AutoEncoderParams(
+            resolution=256,
+            in_channels=3,
+            ch=128,
+            out_ch=3,
+            ch_mult=[1, 2, 4, 4],
+            num_res_blocks=2,
+            z_channels=16,
+            scale_factor=0.3611,
+            shift_factor=0.1159,
+        ),
+    ),
 }
 
 
@@ -593,3 +728,47 @@ def optionally_expand_state_dict(model: torch.nn.Module, state_dict: dict) -> di
                 state_dict[name] = expanded_state_dict_weight
 
     return state_dict
+
+
+class WatermarkEmbedder:
+    def __init__(self, watermark):
+        self.watermark = watermark
+        self.num_bits = len(WATERMARK_BITS)
+        self.encoder = WatermarkEncoder()
+        self.encoder.set_watermark("bits", self.watermark)
+
+    def __call__(self, image: torch.Tensor) -> torch.Tensor:
+        """
+        Adds a predefined watermark to the input image
+
+        Args:
+            image: ([N,] B, RGB, H, W) in range [-1, 1]
+
+        Returns:
+            same as input but watermarked
+        """
+        image = 0.5 * image + 0.5
+        squeeze = len(image.shape) == 4
+        if squeeze:
+            image = image[None, ...]
+        n = image.shape[0]
+        image_np = rearrange((255 * image).detach().cpu(), "n b c h w -> (n b) h w c").numpy()[:, :, :, ::-1]
+        # torch (b, c, h, w) in [0, 1] -> numpy (b, h, w, c) [0, 255]
+        # watermarking libary expects input as cv2 BGR format
+        for k in range(image_np.shape[0]):
+            image_np[k] = self.encoder.encode(image_np[k], "dwtDct")
+        image = torch.from_numpy(rearrange(image_np[:, :, :, ::-1], "(n b) h w c -> n b c h w", n=n)).to(
+            image.device
+        )
+        image = torch.clamp(image / 255, min=0.0, max=1.0)
+        if squeeze:
+            image = image[0]
+        image = 2 * image - 1
+        return image
+
+
+# A fixed 48-bit message that was chosen at random
+WATERMARK_MESSAGE = 0b001010101111111010000111100111001111010100101110
+# bin(x)[2:] gives bits of x as str, use int to convert them to 0/1
+WATERMARK_BITS = [int(bit) for bit in bin(WATERMARK_MESSAGE)[2:]]
+embed_watermark = WatermarkEmbedder(WATERMARK_BITS)

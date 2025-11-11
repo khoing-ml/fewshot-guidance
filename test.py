@@ -1,3 +1,3 @@
-prompt = ""
-prompt = [prompt]
+prompt = ("")
+prompt.split("|")
 print(prompt)
