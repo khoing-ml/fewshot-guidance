@@ -8,7 +8,7 @@ import torch
 import numpy as np
 from dotenv import load_dotenv
 
-from flux.sampling import get_noise, prepare_unconditional, get_schedule, denoise, unpack
+from flux.sampling import get_noise, prepare, get_schedule, denoise, unpack
 from flux.util import load_flow_model
 
 
@@ -27,7 +27,7 @@ def main():
     noise = get_noise(num_samples=1, height=height, width=width, device=device, dtype=dtype, seed=seed)
 
     # Prepare unconditional inputs
-    inp = prepare_unconditional(noise)
+    inp = prepare(noise)
     img = inp["img"]
     img_ids = inp["img_ids"]
     txt = inp["txt"]
