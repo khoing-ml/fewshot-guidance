@@ -27,7 +27,7 @@ import numpy as np
 
 def sample_fewshot_from_dataset(
     dataset: FewshotImageDataset,
-    num_shots: int = 5,
+    num_shots: int = 1,
     class_idx: int | None = None,
 ) -> list[str]:
     """
