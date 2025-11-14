@@ -1,5 +1,7 @@
 import math
 from typing import Callable
+from pathlib import Path
+import random
 
 import numpy as np
 import torch
@@ -13,6 +15,133 @@ from .modules.conditioner import HFEmbedder
 from .modules.image_embedders import CannyImageEncoder, DepthImageEncoder, ReduxImageEncoder
 from .util import PREFERED_KONTEXT_RESOLUTIONS
 
+
+# ============================================================================
+# Dataset Loading Utilities for Fewshot Guidance
+# ============================================================================
+
+def load_dataset_from_directory(root_dir, extensions=['.jpg', '.jpeg', '.png', '.webp']):
+    """
+    Load image paths from a dataset directory.
+    
+    Supports two structures:
+    1. Class-based: dataset_root/class1/img1.jpg, dataset_root/class2/img2.jpg
+    2. Flat: dataset_root/img1.jpg, dataset_root/img2.jpg
+    
+    Returns:
+        tuple: (image_paths, class_labels, class_to_idx)
+    """
+    root_dir = Path(root_dir)
+    
+    if not root_dir.exists():
+        raise ValueError(f"Dataset directory does not exist: {root_dir}")
+    
+    image_paths = []
+    class_labels = []
+    class_to_idx = {}
+    
+    # Check for class-based directory structure
+    subdirs = [d for d in root_dir.iterdir() if d.is_dir()]
+    
+    if subdirs:
+        # Class-based structure
+        for class_idx, class_dir in enumerate(sorted(subdirs)):
+            class_name = class_dir.name
+            class_to_idx[class_name] = class_idx
+            
+            for ext in extensions:
+                for img_path in class_dir.glob(f"*{ext}"):
+                    image_paths.append(str(img_path))
+                    class_labels.append(class_idx)
+    else:
+        # Flat structure - all images in one class
+        for ext in extensions:
+            for img_path in root_dir.glob(f"*{ext}"):
+                image_paths.append(str(img_path))
+                class_labels.append(0)
+        class_to_idx = {'default': 0}
+    
+    if len(image_paths) == 0:
+        raise ValueError(f"No images found in {root_dir} with extensions {extensions}")
+    
+    return image_paths, class_labels, class_to_idx
+
+
+def sample_images_from_dataset(image_paths, class_labels, class_to_idx, 
+                                num_shots=5, class_name=None, seed=None):
+    """
+    Sample images from a loaded dataset.
+    
+    Args:
+        image_paths: List of all image paths
+        class_labels: List of class labels for each image
+        class_to_idx: Dict mapping class names to indices
+        num_shots: Number of images to sample
+        class_name: Optional class to sample from
+        seed: Random seed for reproducibility
+    
+    Returns:
+        List of selected image paths
+    """
+    if seed is not None:
+        random.seed(seed)
+    
+    if class_name:
+        if class_name in class_to_idx:
+            class_idx = class_to_idx[class_name]
+            indices = [i for i, c in enumerate(class_labels) if c == class_idx]
+            if len(indices) < num_shots:
+                print(f"Warning: Only {len(indices)} images in class '{class_name}', using all")
+                selected_indices = indices
+            else:
+                selected_indices = random.sample(indices, num_shots)
+        else:
+            raise ValueError(f"Class '{class_name}' not found. Available: {list(class_to_idx.keys())}")
+    else:
+        # Random sampling across all images
+        selected_indices = random.sample(range(len(image_paths)), min(num_shots, len(image_paths)))
+    
+    return [image_paths[i] for i in selected_indices]
+
+
+def load_and_encode_images(image_paths, ae, device, height=1024, width=1024):
+    """
+    Load and encode images to latent space for fewshot guid ance.
+    
+    Args:
+        image_paths: List of image file paths
+        ae: AutoEncoder model
+        device: torch device
+        height: Target height
+        width: Target width
+    
+    Returns:
+        Encoded latents [num_images, seq_len, channels]
+    """
+    latents = []
+    
+    for img_path in image_paths:
+        # Load and preprocess image
+        img = Image.open(img_path).convert("RGB")
+        img = img.resize((width, height), Image.Resampling.LANCZOS)
+        img = np.array(img).astype(np.float32) / 127.5 - 1.0
+        img = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).to(device)
+        
+        # Encode to latent
+        with torch.no_grad():
+            latent = ae.encode(img.to(torch.bfloat16))
+            # Pack the latent
+            latent = rearrange(latent, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
+            latents.append(latent)
+    
+    # Stack all latents [num_images, seq_len, channels]
+    fewshot_latents = torch.cat(latents, dim=0)
+    return fewshot_latents
+
+
+# ============================================================================
+# Sampling Functions
+# ============================================================================
 
 def get_noise(
     num_samples: int,
@@ -353,167 +482,6 @@ def denoise(
     return img
 
 
-def denoise_with_guidance(
-    model: Flux,
-    # model input
-    img: Tensor,
-    img_ids: Tensor,
-    txt: Tensor,
-    txt_ids: Tensor,
-    vec: Tensor,
-    # sampling parameters
-    timesteps: list[float],
-    guidance: float = 4.0,
-    # extra img tokens (channel-wise)
-    img_cond: Tensor | None = None,
-    # extra img tokens (sequence-wise)
-    img_cond_seq: Tensor | None = None,
-    img_cond_seq_ids: Tensor | None = None,
-    # learned guidance controller (trained online)
-    guidance_model: Callable | None = None,
-    guidance_optimizer: torch.optim.Optimizer | None = None,
-    guidance_loss_fn: Callable | None = None,
-    guidance_train_steps: int = 10,
-    guidance_scale: float = 1.0,
-    # fewshot reference images
-    fewshot_latents: Tensor | None = None,
-):
-    """
-    Denoise with online-trained guidance controller c^φ(t, X_t).
-    
-    The guidance model is trained AT EACH TIMESTEP to minimize your custom loss:
-    
-    L_RGM(φ) = E[||u_t^θ(t,X_t) + c_t^φ(t,X_t) - (X_1 - X_0)||^2] + λ|c_t^φ(X_1) - c_t^φ(X̂_1)|
-    
-    Args:
-        model: The Flux diffusion model
-        img: Initial latent image
-        img_ids: Image position IDs
-        txt: Text embeddings
-        txt_ids: Text position IDs
-        vec: CLIP pooled embeddings
-        timesteps: Denoising timestep schedule
-        guidance: Classifier-free guidance scale
-        img_cond: Optional channel-wise image conditioning
-        img_cond_seq: Optional sequence-wise image conditioning
-        img_cond_seq_ids: Position IDs for sequence conditioning
-        guidance_model: Controller c^φ to be trained at each timestep
-        guidance_optimizer: Optimizer for guidance_model (e.g., Adam)
-        guidance_loss_fn: Custom loss function with signature:
-                         (img, pred, guidance_correction, txt, vec, timestep, step_idx, fewshot_latents) -> loss_tensor
-                         This should return your L_RGM(φ) or similar cost
-        guidance_train_steps: Number of optimization steps per timestep
-        guidance_scale: Scaling factor λ for the guidance correction
-        fewshot_latents: Fewshot reference image latents [batch, seq_len, channels] or [num_shots, seq_len, channels]
-                        Sampled from your fewshot dataset
-    
-    Returns:
-        Denoised latent image
-    """
-    # this is ignored for schnell
-    guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
-    
-    for step_idx, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
-        t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
-        img_input = img
-        img_input_ids = img_ids
-        if img_cond is not None:
-            img_input = torch.cat((img, img_cond), dim=-1)
-        if img_cond_seq is not None:
-            assert (
-                img_cond_seq_ids is not None
-            ), "You need to provide either both or neither of the sequence conditioning"
-            img_input = torch.cat((img_input, img_cond_seq), dim=1)
-            img_input_ids = torch.cat((img_input_ids, img_cond_seq_ids), dim=1)
-        
-        # Get base model prediction u_t^θ(t, X_t) with no_grad
-        with torch.no_grad():
-            pred = model(
-                img=img_input,
-                img_ids=img_input_ids,
-                txt=txt,
-                txt_ids=txt_ids,
-                y=vec,
-                timesteps=t_vec,
-                guidance=guidance_vec,
-            )
-            if img_input_ids is not None:
-                pred = pred[:, : img.shape[1]]
-        
-        # Train guidance controller at this timestep if provided
-        guidance_correction = None
-        if guidance_model is not None and guidance_optimizer is not None and guidance_loss_fn is not None:
-            guidance_model.train()
-            
-            # Optimize guidance model for this timestep
-            for train_step in range(guidance_train_steps):
-                guidance_optimizer.zero_grad()
-                
-                # Get guidance correction c_t^φ(t, X_t) conditioned on fewshot examples
-                guidance_correction = guidance_model(
-                    img=img,
-                    pred=pred,
-                    txt=txt,
-                    vec=vec,
-                    timestep=t_vec,
-                    step_idx=step_idx,
-                    fewshot_img=fewshot_latents,  # Pass fewshot reference
-                )
-                perturbed_img = img + torch.randn_like(img) * 0.01  # small perturbation
-                perturbed_guidance_correction = guidance_model(
-                    img=perturbed_img,
-                    pred=pred,
-                    txt=txt,
-                    vec=vec,
-                    timestep=t_vec,
-                    step_idx=step_idx,
-                    fewshot_img=fewshot_latents,
-                )
-                # Handle dict return
-                if isinstance(guidance_correction, dict):
-                    guidance_correction = guidance_correction['guidance']
-
-                # Compute your custom loss L_RGM(φ)
-                loss = guidance_loss_fn(
-                    img=img,
-                    pred=pred,
-                    guidance_correction=guidance_correction,
-                    perturbed_guidance_correction=perturbed_guidance_correction,
-                    txt=txt,
-                    vec=vec,
-                    timestep=t_vec,
-                    step_idx=step_idx,
-                    fewshot_latents=fewshot_latents,
-                )
-                
-                # Backprop and update
-                loss.backward()
-                guidance_optimizer.step()
-            
-            # After training, get final correction with no_grad
-            guidance_model.eval()
-            with torch.no_grad():
-                guidance_correction = guidance_model(
-                    img=img,
-                    pred=pred,
-                    txt=txt,
-                    vec=vec,
-                    timestep=t_vec,
-                    step_idx=step_idx,
-                    fewshot_img=fewshot_latents,
-                )
-                if isinstance(guidance_correction, dict):
-                    guidance_correction = guidance_correction['guidance']
-        
-        # Apply guidance if it was computed
-        if guidance_correction is not None:
-            # Apply scaled guidance: pred_final = u_t^θ + λ * c_t^φ
-            pred = pred + guidance_scale * guidance_correction.detach()
-
-        # Euler integration step: X_{t-Δt} = X_t + Δt * pred_final
-        img = img + (t_prev - t_curr) * pred
-
-    return img
 
 
 def unpack(x: Tensor, height: int, width: int) -> Tensor:
