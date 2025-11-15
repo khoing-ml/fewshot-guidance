@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from typing import Optional, Dict, Any
 
-from base_model import BaseGuidanceModel
+from .base_model import BaseGuidanceModel
 
 class MLPGuidanceModel(BaseGuidanceModel):
     """
@@ -84,37 +84,34 @@ class MLPGuidanceModel(BaseGuidanceModel):
         else:
             t_embed = timestep.unsqueeze(-1)  # [batch, 1]
         
+        # Handle vec - if None, create zero vector of expected dimension
+        if vec is None:
+            vec = torch.zeros(batch_size, self.latent_channels, device=img.device, dtype=img.dtype)
+        
         # Combine vec and timestep conditioning
-        condition = torch.cat([vec, t_embed], dim=-1) if vec is not None else t_embed  # [batch, condition_dim]
+        condition = torch.cat([vec, t_embed], dim=-1)  # [batch, condition_dim]
         condition = condition.unsqueeze(1).expand(-1, seq_len, -1)  # [batch, seq_len, condition_dim]
         
-        # Process img and pred
-        img_features = self.img_proj(img)  # [batch, seq_len, hidden_dim]
-        pred_features = self.pred_proj(pred)  # [batch, seq_len, hidden_dim]
+        # Reshape for linear operations: [batch*seq_len, channels]
+        img_flat = img.reshape(-1, channels)
+        pred_flat = pred.reshape(-1, channels) if pred is not None else torch.zeros_like(img_flat)
+        condition_flat = condition.reshape(-1, condition.shape[-1])
         
-        # Process fewshot reference image if provided
-        if fewshot_img is not None:
-            # fewshot_img: [batch, seq_len, channels] or [num_shots, seq_len, channels]
-            if fewshot_img.dim() == 3 and fewshot_img.shape[0] != batch_size:
-                # Multiple fewshot examples: average them
-                fewshot_features = self.img_proj(fewshot_img)  # [num_shots, seq_len, hidden_dim]
-                fewshot_features = fewshot_features.mean(dim=0, keepdim=True)  # [1, seq_len, hidden_dim]
-                fewshot_features = fewshot_features.expand(batch_size, -1, -1)  # [batch, seq_len, hidden_dim]
-            else:
-                fewshot_features = self.img_proj(fewshot_img)  # [batch, seq_len, hidden_dim]
-            
-            # Combine all features including fewshot
-            combined = torch.cat([img_features, pred_features, fewshot_features, condition], dim=-1)
-            combined = self.combine(combined)  # [batch, seq_len, hidden_dim]
-        else:
-            # Combine all features
-            combined = torch.cat([img_features, pred_features, condition], dim=-1)
-            combined = self.combine_no_fewshot(combined)  # [batch, seq_len, hidden_dim]
+        # Process img and pred
+        img_features = self.img_proj(img_flat)  # [batch*seq_len, hidden_dim]
+        pred_features = self.pred_proj(pred_flat)  # [batch*seq_len, hidden_dim]
+        
+        # Combine all features
+        combined = torch.cat([img_features, pred_features, condition_flat], dim=-1)
+        combined = self.combine_no_fewshot(combined)  # [batch*seq_len, hidden_dim]
         
         # Process through MLP
-        features = self.mlp(combined)  # [batch, seq_len, hidden_dim]
+        features = self.mlp(combined)  # [batch*seq_len, hidden_dim]
         
         # Project to output
-        guidance = self.output_proj(features)  # [batch, seq_len, channels]
+        guidance = self.output_proj(features)  # [batch*seq_len, channels]
+        
+        # Reshape back to [batch, seq_len, channels]
+        guidance = guidance.reshape(batch_size, seq_len, channels)
         
         return guidance

@@ -46,8 +46,8 @@ class FewshotImageDataset(Dataset):
         self,
         root_dir: str | Path,
         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.webp'],
-        height: int = 1024,
-        width: int = 1024,
+        height: int = 512,
+        width: int = 512,
         transform: Optional[Callable] = None,
     ):
         """
@@ -384,8 +384,8 @@ def load_image_and_encode(
     image_path: str,
     ae,
     device: torch.device,
-    height: int = 1024,
-    width: int = 1024,
+    height: int = 512,
+    width: int = 512,
 ) -> Tensor:
     """
     Load a single image and encode it to latent space.
@@ -418,8 +418,8 @@ def batch_encode_images(
     image_paths: List[str],
     ae,
     device: torch.device,
-    height: int = 1024,
-    width: int = 1024,
+    height: int = 512,
+    width: int = 512,
     batch_size: int = 4,
 ) -> Tensor:
     """
@@ -556,8 +556,8 @@ if __name__ == "__main__":
     # Create a dataset
     dataset = FewshotImageDataset(
         root_dir="path/to/your/dataset",
-        height=1024,
-        width=1024,
+        height=512,
+        width=512,
     )
     
     print_dataset_stats(dataset)

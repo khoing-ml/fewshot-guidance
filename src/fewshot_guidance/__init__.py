@@ -9,13 +9,13 @@ from .checkpoint_utils import (
     save_checkpoint,
     load_checkpoint,
 )
-from .train import GuidanceModelTrainer
+from .train import GuidanceTrainer
 
 __all__ = [
     'CheckpointManager',
     'save_checkpoint',
     'load_checkpoint',
-    'GuidanceModelTrainer',
+    'GuidanceTrainer',
 ]
 
 __version__ = '0.1.0'

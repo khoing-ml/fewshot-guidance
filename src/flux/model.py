@@ -91,14 +91,14 @@ class Flux(nn.Module):
         y: Tensor | None = None, # Vector conditioning
         guidance: Tensor | None = None,
     ) -> Tensor:
-        if img.ndim != 3:
+        if img is not None and img.dim() != 3:
             raise ValueError("Input img tensor must have 3 dimensions.")
         # Handle unconditional generation
         if timesteps is None:
             # Default timestep if not provided
             timesteps = torch.ones(img.shape[0], device=img.device, dtype=img.dtype)
         
-        if txt.ndim != 3:
+        if txt is not None and txt.dim() != 3:
             raise ValueError("Input txt tensor must have 3 dimensions.")
 
         # running on sequences img

@@ -4,8 +4,32 @@ import torch.nn.functional as F
 from torch import Tensor
 from typing import Optional, Dict, Any
 
-from base_model import BaseGuidanceModel
+from .base_model import BaseGuidanceModel
 
+
+class AttentionGuidanceLayer(nn.Module):
+    """Single attention-based guidance layer."""
+    
+    def __init__(self, hidden_dim: int, num_heads: int):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        self.attn = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim * 4),
+            nn.GELU(),
+            nn.Linear(hidden_dim * 4, hidden_dim),
+        )
+    
+    def forward(self, x: Tensor) -> Tensor:
+        # Self-attention
+        x_norm = self.norm1(x)
+        attn_out, _ = self.attn(x_norm, x_norm, x_norm)
+        x = x + attn_out
+        
+        # Feed-forward
+        x = x + self.ffn(self.norm2(x))
+        return x
 
 
 class AttentionGuidanceModel(BaseGuidanceModel):

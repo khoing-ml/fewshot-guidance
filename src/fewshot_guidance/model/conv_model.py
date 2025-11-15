@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch import Tensor
 from typing import Optional, Dict, Any
 
+from .base_model import BaseGuidanceModel
+
 
 class ConvGuidanceModel(BaseGuidanceModel):
     """
