@@ -114,7 +114,7 @@ def generate(
 
 def main():
     parser = argparse.ArgumentParser(description="Simple Flux CLI (no Gradio). Generates one image and exits.")
-    parser.add_argument("--name", type=str, default="flux-dev", choices=list(configs.keys()))
+    parser.add_argument("--name", type=str, default="flux-schnell", choices=list(configs.keys()))
     parser.add_argument("--prompt", type=str, default="")
     parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--height", type=int, default=256)

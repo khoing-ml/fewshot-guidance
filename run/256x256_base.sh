@@ -5,7 +5,7 @@ SEED=42
 NAME="flux-dev"
 SIZE=256
 NUM_STEPS=50
-PROMPT="a cat" # leave it "" for unconditional generation
+PROMPT="A city with many skyscrapers" # leave it "" for unconditional generation
 
 python infer_cli.py \
     --name=$NAME \

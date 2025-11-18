@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from typing import Optional, Dict, Any
-from .checkpoint_utils import CheckpointManager, save_checkpoint, load_checkpoint
+from checkpoint_utils import CheckpointManager, save_checkpoint, load_checkpoint
 from model.base_model import BaseGuidanceModel
 from model.mlp_model import MLPGuidanceModel
 from model.attention_based_model import AttentionGuidanceModel

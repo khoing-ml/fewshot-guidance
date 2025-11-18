@@ -58,11 +58,15 @@ def load_and_encode_fewshot_images(
         img = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).to(device)
         
         with torch.no_grad():
-            latent = ae.encode(img.to(torch.bfloat16))
+            # Use autocast to handle dtype conversion for the encoder
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+                latent = ae.encode(img)
+            print("Initial latent shape:", latent.shape)
             # Pack the latent
             from einops import rearrange
             latent = rearrange(latent, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
             latents.append(latent)
+            print("Latent shape:", latent.shape)
     
     # Stack all fewshot latents [num_shots, seq_len, channels]
     fewshot_latents = torch.cat(latents, dim=0)
@@ -111,8 +115,11 @@ def create_fewshot_guidance_loss(
             
             for i in range(fewshot_latents.shape[0]):
                 X_1 = fewshot_latents[i:i+1]  # Target fewshot latent [1, seq_len, channels]
-                X_0 = initial_noise  # Initial noise [batch, seq_len, channels]
+                X_0 = initial_noise  # Initial noise [batch, seq_len, channels] # Currently noise.shape = [Batch_Size=1, Channels=16, Height, Width] ->Fix to [batch, seq_len, channels] (b c (h ph) (w pw) -> b (h w) (c ph pw))
                 
+                print("X1 shape:", X_1.shape)
+                print("X0 shape:", X_0.shape)
+
                 # Target trajectory: X_1 - X_0
                 target_direction = X_1 - X_0
                 
