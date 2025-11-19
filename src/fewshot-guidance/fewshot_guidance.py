@@ -29,7 +29,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 
-from flux.sampling import denoise_with_guidance, get_noise, get_schedule, prepare, unpack
+from flux.sampling import denoise_with_guidance, get_noise, get_schedule, prepare, unpack, pack
 from flux.util import load_ae, load_clip, load_flow_model, load_t5
 from model.mlp_model import MLPGuidanceModel
 from model.attention_based_model import AttentionGuidanceModel
@@ -115,7 +115,7 @@ def create_fewshot_guidance_loss(
             
             for i in range(fewshot_latents.shape[0]):
                 X_1 = fewshot_latents[i:i+1]  # Target fewshot latent [1, seq_len, channels]
-                X_0 = initial_noise  # Initial noise [batch, seq_len, channels] # Currently noise.shape = [Batch_Size=1, Channels=16, Height, Width] ->Fix to [batch, seq_len, channels] (b c (h ph) (w pw) -> b (h w) (c ph pw))
+                X_0 = pack(initial_noise, initial_noise.shape[2], initial_noise.shape[3])  # Initial noise [batch, seq_len, channels] # Currently noise.shape = [Batch_Size=1, Channels=16, Height, Width] ->Fix to [batch, seq_len, channels] (b c (h ph) (w pw) -> b (h w) (c ph pw))
                 
                 print("X1 shape:", X_1.shape)
                 print("X0 shape:", X_0.shape)
@@ -157,7 +157,7 @@ def main():
     parser.add_argument("--prompt", type=str, required=True, help="Text prompt")
     parser.add_argument("--fewshot-images", type=str, nargs="+", required=True,
                        help="Paths to fewshot reference images")
-    parser.add_argument("--model", type=str, default="flux-schnell")
+    parser.add_argument("--model", type=str, default="flux-dev")
     parser.add_argument("--guidance-type", type=str, default="mlp",
                        choices=["mlp", "attention"],
                        help="Type of guidance model")

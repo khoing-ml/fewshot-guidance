@@ -655,3 +655,13 @@ def unpack(x: Tensor, height: int, width: int) -> Tensor:
         ph=2,
         pw=2,
     )
+
+def pack(x: Tensor, height: int, width: int) -> Tensor:
+    return rearrange(
+        x,
+        "b c (h ph) (w pw) -> b (h w) (c ph pw)",
+        h=math.ceil(height / 16),
+        w=math.ceil(width / 16),
+        ph=2,
+        pw=2,
+    )
