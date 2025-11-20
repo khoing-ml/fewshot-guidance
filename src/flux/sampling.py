@@ -2,6 +2,7 @@ import math
 from typing import Callable
 from pathlib import Path
 import random
+from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -575,7 +576,7 @@ def denoise_with_guidance(
             guidance_model.train()
             
             # Optimize guidance model for this timestep
-            for train_step in range(guidance_train_steps):
+            for train_step in tqdm(range(guidance_train_steps), desc=f"Guidance Training Step {step_idx+1}/{len(timesteps)-1}"):
                 guidance_optimizer.zero_grad()
                 
                 # Get guidance correction c_t^φ(t, X_t) conditioned on fewshot examples
@@ -615,6 +616,7 @@ def denoise_with_guidance(
                     fewshot_latents=fewshot_latents,
                 )
                 
+                print(f"  Step {train_step+1}/{guidance_train_steps}, Loss: {loss.item():.6f}")
                 # Backprop and update
                 loss.backward()
                 guidance_optimizer.step()

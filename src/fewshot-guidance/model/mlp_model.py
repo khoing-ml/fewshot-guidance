@@ -104,7 +104,8 @@ class MLPGuidanceModel(BaseGuidanceModel):
                     fewshot_features = fewshot_features.mean(dim=0, keepdim=True)  # [1, seq_len, hidden_dim]
                     fewshot_features = fewshot_features.expand(batch_size, -1, -1)  # [batch, seq_len, hidden_dim]
             else:
-                fewshot_features = self.img_proj(fewshot_img)  # [batch, seq_len, hidden_dim]
+                with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    fewshot_features = self.img_proj(fewshot_img)  # [batch, seq_len, hidden_dim]
             
             # Combine all features including fewshot
             combined = torch.cat([img_features, pred_features, fewshot_features, condition], dim=-1)
