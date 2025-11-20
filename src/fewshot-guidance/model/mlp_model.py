@@ -80,7 +80,7 @@ class MLPGuidanceModel(BaseGuidanceModel):
         
         # Process timestep
         if self.use_timestep_embedding:
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 t_embed = self.timestep_embed(timestep.unsqueeze(-1))  # [batch, embed_dim]
         else:
             t_embed = timestep.unsqueeze(-1)  # [batch, 1]
@@ -90,7 +90,7 @@ class MLPGuidanceModel(BaseGuidanceModel):
         condition = condition.unsqueeze(1).expand(-1, seq_len, -1)  # [batch, seq_len, condition_dim]
         
         # Process img and pred
-        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             img_features = self.img_proj(img)  # [batch, seq_len, hidden_dim]
             pred_features = self.pred_proj(pred)  # [batch, seq_len, hidden_dim]
         
@@ -99,26 +99,26 @@ class MLPGuidanceModel(BaseGuidanceModel):
             # fewshot_img: [batch, seq_len, channels] or [num_shots, seq_len, channels]
             if fewshot_img.dim() == 3 and fewshot_img.shape[0] != batch_size:
                 # Multiple fewshot examples: average them
-                with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     fewshot_features = self.img_proj(fewshot_img)  # [num_shots, seq_len, hidden_dim]
                     fewshot_features = fewshot_features.mean(dim=0, keepdim=True)  # [1, seq_len, hidden_dim]
                     fewshot_features = fewshot_features.expand(batch_size, -1, -1)  # [batch, seq_len, hidden_dim]
             else:
-                with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     fewshot_features = self.img_proj(fewshot_img)  # [batch, seq_len, hidden_dim]
             
             # Combine all features including fewshot
             combined = torch.cat([img_features, pred_features, fewshot_features, condition], dim=-1)
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 combined = self.combine(combined)  # [batch, seq_len, hidden_dim]
         else:
             # Combine all features
             combined = torch.cat([img_features, pred_features, condition], dim=-1)
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 combined = self.combine_no_fewshot(combined)  # [batch, seq_len, hidden_dim]
         
         # Process through MLP
-        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             features = self.mlp(combined)  # [batch, seq_len, hidden_dim]
         
             # Project to output
