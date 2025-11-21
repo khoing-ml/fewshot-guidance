@@ -33,6 +33,7 @@ from flux.sampling import denoise_with_guidance, get_noise, get_schedule, prepar
 from flux.util import load_ae, load_clip, load_flow_model, load_t5
 from model.mlp_model import MLPGuidanceModel
 from model.attention_based_model import AttentionGuidanceModel
+from model.unet_model import UNetGuidanceModel
 
 
 def load_and_encode_fewshot_images(
@@ -160,7 +161,7 @@ def main():
                        help="Paths to fewshot reference images")
     parser.add_argument("--model", type=str, default="flux-dev")
     parser.add_argument("--guidance-type", type=str, default="mlp",
-                       choices=["mlp", "attention"],
+                       choices=["mlp", "attention", "unet"],
                        help="Type of guidance model")
     parser.add_argument("--width", type=int, default=1024)
     parser.add_argument("--height", type=int, default=1024)
@@ -210,7 +211,7 @@ def main():
             hidden_dim=512,
             num_layers=2,
         ).to(device)
-    else:  # attention
+    elif args.guidance_type == "attention":
         guidance_model = AttentionGuidanceModel(
             latent_channels=64,
             txt_dim=4096,
@@ -218,6 +219,14 @@ def main():
             hidden_dim=512,
             num_heads=8,
             num_layers=2,
+        ).to(device)
+    else:  # unet
+        guidance_model = UNetGuidanceModel(
+            latent_channels=64,
+            txt_dim=4096,
+            vec_dim=768,
+            use_timestep_embedding=True,
+            timestep_embed_dim=256,
         ).to(device)
     
     # Create optimizer

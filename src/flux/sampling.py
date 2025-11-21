@@ -573,7 +573,7 @@ def denoise_with_guidance(
         # Train guidance controller at this timestep if provided
         guidance_correction = None
         if guidance_model is not None and guidance_optimizer is not None and guidance_loss_fn is not None:
-            guidance_model.train()
+            # guidance_model.train()
             
             # Optimize guidance model for this timestep
             for train_step in tqdm(range(guidance_train_steps), desc=f"Guidance Training Step {step_idx+1}/{len(timesteps)-1}"):
@@ -622,7 +622,7 @@ def denoise_with_guidance(
                 guidance_optimizer.step()
             
             # After training, get final correction with no_grad
-            guidance_model.eval()
+            # guidance_model.eval()
             with torch.no_grad():
                 guidance_correction = guidance_model(
                     img=img,

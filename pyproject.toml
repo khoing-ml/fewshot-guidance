@@ -16,6 +16,7 @@ dependencies = [
   "safetensors",
   "sentencepiece",
   "transformers >= 4.45.2",
+  "diffusers == 0.35.2",
   "tokenizers",
   "protobuf",
   "requests",

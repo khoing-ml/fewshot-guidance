@@ -3,15 +3,15 @@
 # Training an MLP guidance model for few-shot images in the "dataset" folder
 
 DATASET_PATH="./datasets/512x512_vending_machine"
-MODEL_TYPE="mlp"
+MODEL_TYPE="unet"
 GUIDANCE_SCALE=1.0
 GUIDANCE_TRAIN_STEPS=10
 GUIDANCE_LR=0.001
-IMAGE_SIZE=256
+IMAGE_SIZE=512
 PROMPT="A vending machine"
 # Allow DEVICE to be set via environment variable or first script argument, default to "cuda"
 DEVICE="${1:-${DEVICE:-cuda}}"
-OUTPUT_DIR="./output/mlp_guidance"
+OUTPUT_DIR="./output/unet_guidance"
 SEED=42
 STEPS=4
 LAMBDA_RECONSTRUCTION=1.0
@@ -45,4 +45,4 @@ python src/fewshot-guidance/fewshot_guidance.py \
     --lambda-reconstruction $LAMBDA_RECONSTRUCTION \
     --lambda-consistency $LAMBDA_CONSISTENCY \
     --device $DEVICE \
-    --output "$OUTPUT_DIR/guidance_output.png"
+    --output "$OUTPUT_DIR/unet_guidance_output.png"

@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from typing import Optional, Dict, Any
-from diffusers import UNet2DModel
-from base_model import BaseGuidanceModel
+from einops import rearrange
+from diffusers.models.unets.unet_2d import UNet2DModel
+from .base_model import BaseGuidanceModel
 
 class UNetGuidanceModel(BaseGuidanceModel):
     """
@@ -54,43 +55,69 @@ class UNetGuidanceModel(BaseGuidanceModel):
     def forward(
         self,
         img: Tensor,
-        pred: Tensor,
-        txt: Tensor,
-        vec: Tensor,
         timestep: Tensor,
-        fewshot: Optional[Tensor] = None,
+        step_idx: int,
+        pred: Tensor | None = None,
+        txt: Tensor | None = None,
+        vec: Tensor | None = None,
+        fewshot_img: Tensor | None = None,
     ) -> Tensor:
         """
         Forward pass of the UNet guidance model.
         
         Args:
-            img: Current image latent tensor (B, C, H, W)
-            pred: Current prediction latent tensor (B, C, H, W)
-            txt: Text embedding tensor (B, txt_dim)
-            vec: CLIP embedding tensor (B, vec_dim)
-            timestep: Current timestep tensor (B,)
-            fewshot: Optional fewshot features (not used here)
+            img: Current image latent tensor [batch, seq_len, channels]
+            timestep: Current timestep tensor [batch]
+            step_idx: Current step index
+            pred: Current prediction latent tensor [batch, seq_len, channels]
+            txt: Text embedding tensor [batch, txt_seq_len, txt_dim]
+            vec: CLIP embedding tensor [batch, vec_dim]
+            fewshot_img: Optional fewshot features [batch, seq_len, channels]
         
         Returns:
-            Predicted guidance signal tensor (B, C, H, W)
+            Predicted guidance signal tensor [batch, seq_len, channels]
         """
-        B, C, H, W = img.shape
+        batch_size, seq_len, channels = img.shape
+        
+        # Ensure pred is provided
+        if pred is None:
+            raise ValueError("UNetGuidanceModel requires 'pred' tensor")
+        
+        # Unpack from sequence format to spatial format
+        # Assume square latent: seq_len = h * w
+        h = w = int(seq_len ** 0.5)
+        assert h * w == seq_len, f"seq_len {seq_len} must be a perfect square for UNet"
+        
+        # Reshape: [batch, seq_len, channels] -> [batch, channels, h, w]
+        img_spatial = rearrange(img, 'b (h w) c -> b c h w', h=h, w=w)
+        pred_spatial = rearrange(pred, 'b (h w) c -> b c h w', h=h, w=w)
         
         # Combine img and pred
-        x = torch.cat([img, pred], dim=1)  # (B, 2C, H, W)
+        x = torch.cat([img_spatial, pred_spatial], dim=1)  # [batch, 2*channels, h, w]
         
         # Prepare conditioning
         if self.use_timestep_embedding:
-            t_emb = self.timestep_embed(timestep.unsqueeze(-1))  # (B, timestep_embed_dim)
-            cond = torch.cat([vec, t_emb], dim=-1)  # (B, condition_dim)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                t_emb = self.timestep_embed(timestep.unsqueeze(-1))  # [batch, timestep_embed_dim]
+            cond = torch.cat([vec, t_emb], dim=-1) if vec is not None else t_emb  # [batch, condition_dim]
         else:
-            cond = torch.cat([vec, timestep.unsqueeze(-1)], dim=-1)  # (B, condition_dim)
+            t_emb = timestep.unsqueeze(-1)  # [batch, 1]
+            cond = torch.cat([vec, t_emb], dim=-1) if vec is not None else t_emb  # [batch, condition_dim]
         
-        # UNet forward
-        out = self.unet(
-            sample=x,
-            timestep=None,  # Timestep is handled via conditioning
-            encoder_hidden_states=cond,
-        ).sample  # (B, C, H, W)
+        # Expand conditioning for each spatial position (UNet cross-attention expects sequence)
+        # [batch, condition_dim] -> [batch, 1, condition_dim]
+        cond = cond.unsqueeze(1)
         
-        return out
+        # UNet forward with autocast
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            out = self.unet(
+                sample=x,
+                timestep=timestep,  # Pass timestep directly to UNet
+                encoder_hidden_states=cond,
+                return_dict=False,
+            )[0]  # [batch, channels, h, w]
+        
+        # Pack back to sequence format: [batch, channels, h, w] -> [batch, seq_len, channels]
+        guidance = rearrange(out, 'b c h w -> b (h w) c')
+        
+        return guidance
