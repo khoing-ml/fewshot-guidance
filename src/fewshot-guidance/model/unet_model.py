@@ -46,8 +46,23 @@ class UNetGuidanceModel(BaseGuidanceModel):
                 "in_channels": latent_channels * 2,  # img + pred
                 "out_channels": latent_channels,
                 "layers_per_block": 2,
-                "block_out_channels": [128, 256, 512],
-                "cross_attention_dim": condition_dim,
+                "block_out_channels": (128, 128, 256, 256, 512, 512),  # the number of output channels for each UNet block
+                "down_block_types": (
+                    "DownBlock2D",  # a regular ResNet downsampling block
+                    "DownBlock2D",
+                    "DownBlock2D",
+                    "DownBlock2D",
+                    "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
+                    "DownBlock2D",
+                ),
+                "up_block_types": (
+                    "UpBlock2D",  # a regular ResNet upsampling block
+                    "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
+                    "UpBlock2D",
+                    "UpBlock2D",
+                    "UpBlock2D",
+                    "UpBlock2D",
+                ),
             }
         
         self.unet = UNet2DModel(**unet_config)
@@ -113,7 +128,6 @@ class UNetGuidanceModel(BaseGuidanceModel):
             out = self.unet(
                 sample=x,
                 timestep=timestep,  # Pass timestep directly to UNet
-                encoder_hidden_states=cond,
                 return_dict=False,
             )[0]  # [batch, channels, h, w]
         
